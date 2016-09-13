@@ -1,0 +1,10 @@
+#!/bin/sh
+
+mkdir $1
+cd $1
+cp ../config.h.example config.h
+cp ../config.mk.example config.mk
+ln -s ../main.c main.c
+ln -s ../gwurrbus.c gwurrbus.c
+ln -s ../gwurrbus.h gwurrbus.h
+ln -s ../global_Makefile Makefile
