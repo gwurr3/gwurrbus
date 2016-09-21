@@ -1,0 +1,72 @@
+
+(rules PCB gwurrbus-relay
+  (snap_angle 
+    fortyfive_degree
+  )
+  (autoroute_settings
+    (fanout off)
+    (autoroute on)
+    (postroute on)
+    (vias on)
+    (via_costs 50)
+    (plane_via_costs 5)
+    (start_ripup_costs 100)
+    (start_pass_no 400)
+    (layer_rule B.Cu
+      (active on)
+      (preferred_direction horizontal)
+      (preferred_direction_trace_costs 1.0)
+      (against_preferred_direction_trace_costs 2.3)
+    )
+  )
+  (rule
+    (width 250.0)
+    (clear 200.2)
+    (clear 125.0 (type smd_to_turn_gap))
+    (clear 50.0 (type smd_smd))
+  )
+  (padstack "Via[0-1]_600:400_um"
+    (shape
+      (circle B.Cu 600.0 0.0 0.0)
+    )
+    (attach off)
+  )
+  (via 
+    "Via[0-1]_600:400_um" "Via[0-1]_600:400_um" default
+  )
+  (via 
+    "Via[0-1]_600:400_um-kicad_default" "Via[0-1]_600:400_um" "kicad_default"
+  )
+  (via_rule
+    default "Via[0-1]_600:400_um"
+  )
+  (via_rule
+    "kicad_default" "Via[0-1]_600:400_um-kicad_default"
+  )
+  (class default
+    (clearance_class default)
+    (via_rule default)
+    (rule
+      (width 250.0)
+    )
+    (circuit 
+      (use_layer B.Cu)
+    )
+  )
+  (class "kicad_default"
+    Earth "Net-(C1-Pad2)" "Net-(C2-Pad1)" +BATT +5V /MOSI /MISO /SCK
+    /RESET "Net-(IC1-Pad10)" "Net-(IC1-Pad11)" "Net-(IC1-Pad12)" /O9 /O10 /O11 /O12
+    /O13 /O14 /O15 /O16 "Net-(IC1-Pad29)" "Net-(IC1-Pad30)" "Net-(IC1-Pad31)" /O8
+    /O7 /O6 /O5 /O4 /O3 /O2 /O1 "Net-(RS485-Pad2)"
+    "Net-(RS485-Pad1)" "Net-(IC1-Pad1)" "Net-(IC1-Pad2)" "Net-(IC1-Pad3)" "Net-(IC1-Pad5)" "Net-(IC1-Pad13)" "Net-(IC1-Pad14)" "Net-(IC1-Pad15)"
+    "Net-(IC1-Pad16)" "Net-(IC1-Pad17)"
+    (clearance_class "kicad_default")
+    (via_rule kicad_default)
+    (rule
+      (width 250.0)
+    )
+    (circuit 
+      (use_layer B.Cu)
+    )
+  )
+)

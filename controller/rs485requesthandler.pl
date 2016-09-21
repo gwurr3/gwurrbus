@@ -79,6 +79,8 @@ unless ($server) {
 syslog(LOG_DAEMON, "rs485requesthandler started and running");
 
 while(1) {
+	$insocket->flush;
+	$outsocket->flush;
 	#get connection from a client
 	my $client = $server->accept();
 	my $clientaddy = $client->peerhost();
