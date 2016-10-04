@@ -1,5 +1,5 @@
 /* 
- * A lot of stuff is stolen from https://github.com/kohyama/AVR-RS485
+ * the basis for the rs485 stuff is stolen from https://github.com/kohyama/AVR-RS485
  * Copyright (c) 2011, Yoshinori Kohyama (http://algobit.jp/)
  * Was under a one-clause BSD license ( only source code, nothing about binary format )
  * So it's compatible with any BSD/MIT/etc licesne
@@ -28,7 +28,6 @@
 #include <avr/interrupt.h>
 #include <util/delay.h>
 #include <string.h>
-#include <stdio.h>
 #include <stdlib.h>
 
 #define NODATA 256
@@ -38,23 +37,29 @@
 
 static volatile struct {
 	char *buf;
-	int size;
-	int read;
-	int write;
+	unsigned char size;
+	unsigned char read;
+	unsigned char write;
 } rs485_rx, rs485_tx;
 
 static void rs485_init(void)
 {
-	rs485_rx.size = 256;
+#if defined (__AVR_ATmega328P__)
+	rs485_rx.size = 255;
+	rs485_tx.size = 255;
+#elif defined (__AVR_ATtiny2313__)
+	rs485_rx.size = 32;
+	rs485_tx.size = 32;
+#endif
+
 	rs485_rx.buf = (char *)malloc(rs485_rx.size * sizeof(char));
 	rs485_rx.read = 0;
 	rs485_rx.write = 0;
-	rs485_tx.size = 256;
+
 	rs485_tx.buf = (char *)malloc(rs485_tx.size * sizeof(char));
 	rs485_tx.read = 0;
 	rs485_tx.write = 0;
 
-	// __AVR_ATmega8__ stuff
 
 #if defined (__AVR_ATmega328P__)
 	DDRD |= 0x04; // PD2:Dir
@@ -70,11 +75,12 @@ static void rs485_init(void)
 	UCSR0A = 0;
 	UCSR0B = _BV(RXCIE0)|_BV(RXEN0)|_BV(TXEN0);
 	UCSR0C = _BV(UCSZ01)|_BV(UCSZ00);
-#elif defined (__AVR_ATtiny2313A__)
+#elif defined (__AVR_ATtiny2313__)
 	DDRD |= 0x04; // PD2:Dir
 	PORTD &= ~0x04; // start in RX mode
 	_delay_us(500);
-	UBRR0 = 103; // 9600bps under CPU 16MHz
+	UBRRH = 0x00;
+	UBRRL = 0x67;
 	UCSRA = 0;
 	UCSRB = _BV(RXCIE)|_BV(RXEN)|_BV(TXEN);
 	UCSRC = _BV(UCSZ1)|_BV(UCSZ0);
@@ -95,7 +101,7 @@ static void rs485_clear(void)
 
 static void rs485_send(char *p)
 {
-	int next;
+	unsigned char next;
 
 	if (*p == '\0')
 		return;
@@ -111,7 +117,7 @@ static void rs485_send(char *p)
 	PORTD |= 0x04; // set TX mode on MAX485 to on
 	_delay_us(500); // wait for MAX485 to turn on
 	UCSR0B |= _BV(UDRIE0); // enable TX interrupt
-#elif defined (__AVR_ATtiny2313A__)
+#elif defined (__AVR_ATtiny2313__)
 	PORTD |= 0x04; // set TX mode on MAX485 to on
 	_delay_us(500); // wait for MAX485 to turn on
 	UCSRB |= _BV(UDRIE); // enable TX interrupt
@@ -163,13 +169,13 @@ static unsigned int rs485_readc(void)
 
 ISR(USART_RX_vect)
 {
-	int next;
+	unsigned char next;
 
 	cli();
 	next = (rs485_rx.write + 1)%rs485_rx.size; // update counter
 #if defined (__AVR_ATmega328P__)
 	rs485_rx.buf[rs485_rx.write] = UDR0; //read a char into buffer
-#elif defined (__AVR_ATtiny2313A__)
+#elif defined (__AVR_ATtiny2313__)
 	rs485_rx.buf[rs485_rx.write] = UDR; //read a char into buffer
 #endif
 	if (next != rs485_rx.read)
@@ -186,7 +192,7 @@ ISR(USART_UDRE_vect)
 #if defined (__AVR_ATmega328P__)
 		UCSR0B &= ~_BV(UDRIE0); // disable transmit interrupt
 		PORTD &= ~0x04; // turn off TX mode on MAX485
-#elif defined (__AVR_ATtiny2313A__)
+#elif defined (__AVR_ATtiny2313__)
 		UCSRB &= ~_BV(UDRIE); // disable transmit interrupt
 		PORTD &= ~0x04; // turn off TX mode on MAX485
 #endif
@@ -195,7 +201,7 @@ ISR(USART_UDRE_vect)
 	} else { // buffer not empty, we're sending
 #if defined (__AVR_ATmega328P__)
 		UDR0 = rs485_tx.buf[rs485_tx.read]; // send a char
-#elif defined (__AVR_ATtiny2313A__)
+#elif defined (__AVR_ATtiny2313__)
 		UDR = rs485_tx.buf[rs485_tx.read]; // send a char
 #endif
 		rs485_tx.read = (rs485_tx.read + 1)%rs485_tx.size; // update counter
@@ -206,19 +212,25 @@ ISR(USART_UDRE_vect)
 
 // protocol stuff
 
+#if defined (__AVR_ATmega328P__)
+static char data_in[254];
+static char argv[243];
+static char output[254];
+#elif defined (__AVR_ATtiny2313__)
+static char data_in[31];
+static char argv[20];
+static char output[31];
+#endif
 
 static unsigned char data_count = 0;
 static unsigned char is_command = 0;
-static unsigned char data_in[255];
 
 static char command[8];
-static char argv[244];
 
 
-static char output[255];
 
-static unsigned int do_output = 0;
-static unsigned int c ;
+static unsigned char do_output = 0;
+static char c ;
 
 
 static void copy_command (void) {
@@ -230,10 +242,14 @@ static void copy_command (void) {
 
 	// Copy the command stuff out of data_in into command and argv
 	memcpy(command, data_in+2, 8); 
-	memcpy(argv, data_in+11, 244); 
+#if defined (__AVR_ATmega328P__)
+	memcpy(argv, data_in+11, 243); 
+	memset(data_in, 0, 254); 
+#elif defined (__AVR_ATtiny2313__)
+	memcpy(argv, data_in+11, 20); 
+	memset(data_in, 0, 31); 
+#endif
 
-	// Now clear data_in, process_rs485 can reuse it
-	memset(data_in, 0, 255); 
 }
 
 
@@ -272,5 +288,4 @@ void process_rs485(void){
 		//do nothing
 	}
 }
-
 
