@@ -32,8 +32,12 @@
 
 #define NODATA 256
 
-// TODO: Make this portable to other AVRs with some ifdef shit
 
+#if defined (__AVR_ATmega328P__)
+#define MYUDR UDR0
+#elif defined (__AVR_ATtiny2313__)
+#define MYUDR UDR
+#endif
 
 static volatile struct {
 	char *buf;
@@ -173,11 +177,7 @@ ISR(USART_RX_vect)
 
 	cli();
 	next = (rs485_rx.write + 1)%rs485_rx.size; // update counter
-#if defined (__AVR_ATmega328P__)
-	rs485_rx.buf[rs485_rx.write] = UDR0; //read a char into buffer
-#elif defined (__AVR_ATtiny2313__)
-	rs485_rx.buf[rs485_rx.write] = UDR; //read a char into buffer
-#endif
+	rs485_rx.buf[rs485_rx.write] = MYUDR; //read a char into buffer
 	if (next != rs485_rx.read)
 		rs485_rx.write = next;
 	sei();
@@ -199,11 +199,7 @@ ISR(USART_UDRE_vect)
 		_delay_us(500); // give MAX485 some time to change modes
 
 	} else { // buffer not empty, we're sending
-#if defined (__AVR_ATmega328P__)
-		UDR0 = rs485_tx.buf[rs485_tx.read]; // send a char
-#elif defined (__AVR_ATtiny2313__)
-		UDR = rs485_tx.buf[rs485_tx.read]; // send a char
-#endif
+		MYUDR = rs485_tx.buf[rs485_tx.read]; // send a char
 		rs485_tx.read = (rs485_tx.read + 1)%rs485_tx.size; // update counter
 	}
 	sei();
