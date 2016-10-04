@@ -18,14 +18,14 @@
 
 int main(void)
 {
-  local_setup();
+	local_setup();
 
 	while(1) {
-    local_main_loop();
+		local_main_loop();
 		process_rs485();
 	}
 
-  return 0;
+	return 0;
 
 }
 

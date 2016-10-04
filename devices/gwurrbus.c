@@ -54,6 +54,9 @@ static void rs485_init(void)
 	rs485_tx.read = 0;
 	rs485_tx.write = 0;
 
+	// __AVR_ATmega8__ stuff
+
+#if defined (__AVR_ATmega328P__)
 	DDRD |= 0x04; // PD2:Dir
 	PORTD &= ~0x04; // start in RX mode
 	_delay_us(500);
@@ -67,6 +70,15 @@ static void rs485_init(void)
 	UCSR0A = 0;
 	UCSR0B = _BV(RXCIE0)|_BV(RXEN0)|_BV(TXEN0);
 	UCSR0C = _BV(UCSZ01)|_BV(UCSZ00);
+#elif defined (__AVR_ATtiny2313A__)
+	DDRD |= 0x04; // PD2:Dir
+	PORTD &= ~0x04; // start in RX mode
+	_delay_us(500);
+	UBRR0 = 103; // 9600bps under CPU 16MHz
+	UCSRA = 0;
+	UCSRB = _BV(RXCIE)|_BV(RXEN)|_BV(TXEN);
+	UCSRC = _BV(UCSZ1)|_BV(UCSZ0);
+#endif
 }
 
 static void rs485_clear(void)
@@ -95,9 +107,15 @@ static void rs485_send(char *p)
 		rs485_tx.write = next;
 		next = (rs485_tx.write + 1)%rs485_tx.size;
 	}
+#if defined (__AVR_ATmega328P__)
 	PORTD |= 0x04; // set TX mode on MAX485 to on
 	_delay_us(500); // wait for MAX485 to turn on
 	UCSR0B |= _BV(UDRIE0); // enable TX interrupt
+#elif defined (__AVR_ATtiny2313A__)
+	PORTD |= 0x04; // set TX mode on MAX485 to on
+	_delay_us(500); // wait for MAX485 to turn on
+	UCSRB |= _BV(UDRIE); // enable TX interrupt
+#endif
 	sei(); //re-enable interrupts so USART_UDRE_vect will fire
 
 	while (rs485_tx.write != rs485_tx.read  ) //block, until buffer has been sent
@@ -149,7 +167,11 @@ ISR(USART_RX_vect)
 
 	cli();
 	next = (rs485_rx.write + 1)%rs485_rx.size; // update counter
+#if defined (__AVR_ATmega328P__)
 	rs485_rx.buf[rs485_rx.write] = UDR0; //read a char into buffer
+#elif defined (__AVR_ATtiny2313A__)
+	rs485_rx.buf[rs485_rx.write] = UDR; //read a char into buffer
+#endif
 	if (next != rs485_rx.read)
 		rs485_rx.write = next;
 	sei();
@@ -161,12 +183,21 @@ ISR(USART_UDRE_vect)
 	if (rs485_tx.read == rs485_tx.write) { // if buffer empty
 		_delay_us(5000); // without this the last char often gets cut off short
 		// could be cutting of max485 right as it's in transit. 16mhz is pretty fast...
+#if defined (__AVR_ATmega328P__)
 		UCSR0B &= ~_BV(UDRIE0); // disable transmit interrupt
 		PORTD &= ~0x04; // turn off TX mode on MAX485
+#elif defined (__AVR_ATtiny2313A__)
+		UCSRB &= ~_BV(UDRIE); // disable transmit interrupt
+		PORTD &= ~0x04; // turn off TX mode on MAX485
+#endif
 		_delay_us(500); // give MAX485 some time to change modes
 
 	} else { // buffer not empty, we're sending
+#if defined (__AVR_ATmega328P__)
 		UDR0 = rs485_tx.buf[rs485_tx.read]; // send a char
+#elif defined (__AVR_ATtiny2313A__)
+		UDR = rs485_tx.buf[rs485_tx.read]; // send a char
+#endif
 		rs485_tx.read = (rs485_tx.read + 1)%rs485_tx.size; // update counter
 	}
 	sei();
