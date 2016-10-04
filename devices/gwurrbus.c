@@ -170,6 +170,8 @@ static unsigned int rs485_readc(void)
 }
 
 
+#if defined (__AVR_ATmega328P__)
+
 
 ISR(USART_RX_vect)
 {
@@ -183,19 +185,15 @@ ISR(USART_RX_vect)
 	sei();
 }
 
+
 ISR(USART_UDRE_vect)
 {
 	cli();
 	if (rs485_tx.read == rs485_tx.write) { // if buffer empty
 		_delay_us(5000); // without this the last char often gets cut off short
 		// could be cutting of max485 right as it's in transit. 16mhz is pretty fast...
-#if defined (__AVR_ATmega328P__)
 		UCSR0B &= ~_BV(UDRIE0); // disable transmit interrupt
 		PORTD &= ~0x04; // turn off TX mode on MAX485
-#elif defined (__AVR_ATtiny2313__)
-		UCSRB &= ~_BV(UDRIE); // disable transmit interrupt
-		PORTD &= ~0x04; // turn off TX mode on MAX485
-#endif
 		_delay_us(500); // give MAX485 some time to change modes
 
 	} else { // buffer not empty, we're sending
@@ -206,14 +204,56 @@ ISR(USART_UDRE_vect)
 }
 
 
+
+
+
+#elif defined (__AVR_ATtiny2313__)
+
+
+ISR(USART_RX_vect)
+{
+	unsigned char next;
+
+	cli();
+	next = (rs485_rx.write + 1)%rs485_rx.size; // update counter
+	rs485_rx.buf[rs485_rx.write] = MYUDR; //read a char into buffer
+	if (next != rs485_rx.read)
+		rs485_rx.write = next;
+	sei();
+}
+
+
+
+ISR(USART_UDRE_vect)
+{
+	cli();
+	if (rs485_tx.read == rs485_tx.write) { // if buffer empty
+		_delay_us(5000); // without this the last char often gets cut off short
+		// could be cutting of max485 right as it's in transit. 16mhz is pretty fast...
+		UCSRB &= ~_BV(UDRIE); // disable transmit interrupt
+		PORTD &= ~0x04; // turn off TX mode on MAX485
+		_delay_us(500); // give MAX485 some time to change modes
+
+	} else { // buffer not empty, we're sending
+		MYUDR = rs485_tx.buf[rs485_tx.read]; // send a char
+		rs485_tx.read = (rs485_tx.read + 1)%rs485_tx.size; // update counter
+	}
+	sei();
+}
+
+#endif
+
+
+
+
 // protocol stuff
 
 #if defined (__AVR_ATmega328P__)
-static char data_in[254];
+static unsigned char data_in[254];
 static char argv[243];
 static char output[254];
 #elif defined (__AVR_ATtiny2313__)
-static char data_in[31];
+static unsigned char data_in[31];
 static char argv[20];
 static char output[31];
 #endif
@@ -226,7 +266,7 @@ static char command[8];
 
 
 static unsigned char do_output = 0;
-static char c ;
+static unsigned int c ;
 
 
 static void copy_command (void) {
