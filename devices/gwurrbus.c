@@ -31,6 +31,7 @@
 #include <stdlib.h>
 
 #define NODATA 256
+#define BUFSIZE 8
 
 
 #if defined (__AVR_ATmega328P__)
@@ -38,6 +39,10 @@
 #elif defined (__AVR_ATtiny2313__)
 #define MYUDR UDR
 #endif
+
+
+#define BAUD 9600
+#define BAUDRATE ((F_CPU)/(BAUD*16UL)-1)
 
 static volatile struct {
 	char *buf;
@@ -48,13 +53,8 @@ static volatile struct {
 
 static void rs485_init(void)
 {
-#if defined (__AVR_ATmega328P__)
-	rs485_rx.size = 255;
-	rs485_tx.size = 255;
-#elif defined (__AVR_ATtiny2313__)
-	rs485_rx.size = 32;
-	rs485_tx.size = 32;
-#endif
+	rs485_rx.size = BUFSIZE;
+	rs485_tx.size = BUFSIZE;
 
 	rs485_rx.buf = (char *)malloc(rs485_rx.size * sizeof(char));
 	rs485_rx.read = 0;
@@ -68,27 +68,22 @@ static void rs485_init(void)
 #if defined (__AVR_ATmega328P__)
 	DDRD |= 0x04; // PD2:Dir
 	PORTD &= ~0x04; // start in RX mode
-	_delay_us(500);
 
-	// checkout http://wormfood.net/avrbaudcalc.php
-	//UBRR0 = 12; // 38400bps under CPU 8MHz
-	//UBRR0 = 25; // 38400bps under CPU 16MHz
 	UBRR0 = 103; // 9600bps under CPU 16MHz
-	//UBRR0 = 3332; // 300bps under CPU 16MHz
-	//UBRR0 = 832; // 1200bps under CPU 16MHz
+
 	UCSR0A = 0;
 	UCSR0B = _BV(RXCIE0)|_BV(RXEN0)|_BV(TXEN0);
 	UCSR0C = _BV(UCSZ01)|_BV(UCSZ00);
 #elif defined (__AVR_ATtiny2313__)
 	DDRD |= 0x04; // PD2:Dir
 	PORTD &= ~0x04; // start in RX mode
-	_delay_us(500);
-	UBRRH = 0x00;
-	UBRRL = 0x67;
-	UCSRA = 0;
+	UBRRH = (BAUDRATE>>8);
+	UBRRL = BAUDRATE;
+	//UCSRA = 0;
 	UCSRB = _BV(RXCIE)|_BV(RXEN)|_BV(TXEN);
 	UCSRC = _BV(UCSZ1)|_BV(UCSZ0);
 #endif
+	_delay_us(500);
 }
 
 static void rs485_clear(void)
@@ -124,6 +119,9 @@ static void rs485_send(char *p)
 #elif defined (__AVR_ATtiny2313__)
 	PORTD |= 0x04; // set TX mode on MAX485 to on
 	_delay_us(500); // wait for MAX485 to turn on
+
+	UCSRB &= ~_BV(RXCIE); // disable RX int
+	UCSRB &= ~_BV(RXEN); // disable RX completely
 	UCSRB |= _BV(UDRIE); // enable TX interrupt
 #endif
 	sei(); //re-enable interrupts so USART_UDRE_vect will fire
@@ -170,7 +168,6 @@ static unsigned int rs485_readc(void)
 }
 
 
-#if defined (__AVR_ATmega328P__)
 
 
 ISR(USART_RX_vect)
@@ -192,46 +189,15 @@ ISR(USART_UDRE_vect)
 	if (rs485_tx.read == rs485_tx.write) { // if buffer empty
 		_delay_us(5000); // without this the last char often gets cut off short
 		// could be cutting of max485 right as it's in transit. 16mhz is pretty fast...
+#if defined (__AVR_ATmega328P__)
 		UCSR0B &= ~_BV(UDRIE0); // disable transmit interrupt
 		PORTD &= ~0x04; // turn off TX mode on MAX485
-		_delay_us(500); // give MAX485 some time to change modes
-
-	} else { // buffer not empty, we're sending
-		MYUDR = rs485_tx.buf[rs485_tx.read]; // send a char
-		rs485_tx.read = (rs485_tx.read + 1)%rs485_tx.size; // update counter
-	}
-	sei();
-}
-
-
-
-
-
 #elif defined (__AVR_ATtiny2313__)
-
-
-ISR(USART_RX_vect)
-{
-	unsigned char next;
-
-	cli();
-	next = (rs485_rx.write + 1)%rs485_rx.size; // update counter
-	rs485_rx.buf[rs485_rx.write] = MYUDR; //read a char into buffer
-	if (next != rs485_rx.read)
-		rs485_rx.write = next;
-	sei();
-}
-
-
-
-ISR(USART_UDRE_vect)
-{
-	cli();
-	if (rs485_tx.read == rs485_tx.write) { // if buffer empty
-		_delay_us(5000); // without this the last char often gets cut off short
-		// could be cutting of max485 right as it's in transit. 16mhz is pretty fast...
 		UCSRB &= ~_BV(UDRIE); // disable transmit interrupt
 		PORTD &= ~0x04; // turn off TX mode on MAX485
+		UCSRB |= _BV(RXCIE); // re-enable RX int
+		UCSRB |= _BV(RXEN); // enable RX mode again
+#endif
 		_delay_us(500); // give MAX485 some time to change modes
 
 	} else { // buffer not empty, we're sending
@@ -241,51 +207,32 @@ ISR(USART_UDRE_vect)
 	sei();
 }
 
-#endif
 
 
 
 
 // protocol stuff
 
-#if defined (__AVR_ATmega328P__)
-static unsigned char data_in[254];
-static char argv[243];
-static char output[254];
-#elif defined (__AVR_ATtiny2313__)
-static unsigned char data_in[31];
-static char argv[20];
-static char output[31];
-#endif
+static unsigned char data_in[BUFSIZE];
+static char output[BUFSIZE];
 
 static unsigned char data_count = 0;
 static unsigned char is_command = 0;
 
-static char command[8];
-
-
+static char command;
+static char argv;
 
 static unsigned char do_output = 0;
 static unsigned int c ;
 
 
 static void copy_command (void) {
-	// packet example: ID-":"-<command 8 bytes>-":"-<arguments>"
-	// 
-	// so in the sender program, it might look like this:
-	//unsigned char wbuf[] = " :PING    :TROLOLOLOLOLOLO This is an argument \n";
-	//wbuf[0] = 128; // the address byte goes in that empty whitespace in the above
-
+	// packet example: "ID:command:arg\n" where ID, command, and arg are all one byte/char
+	// the ":" chars in between could really be anything, it's just a buffer
 	// Copy the command stuff out of data_in into command and argv
-	memcpy(command, data_in+2, 8); 
-#if defined (__AVR_ATmega328P__)
-	memcpy(argv, data_in+11, 243); 
-	memset(data_in, 0, 254); 
-#elif defined (__AVR_ATtiny2313__)
-	memcpy(argv, data_in+11, 20); 
-	memset(data_in, 0, 31); 
-#endif
-
+	command = data_in[2];
+	argv = data_in[4];
+	//memset(data_in, 0, 254); 
 }
 
 
@@ -311,6 +258,7 @@ void process_rs485(void){
 			data_count = 0;
 			is_command = 0;	
 			
+			// do something with the data we just got
 			copy_command();
 			process_command();
 			// clear ring buffers for good measure

@@ -5,7 +5,7 @@
 
 
 // use an extended ASCII code ( 128 and up ) as an address so it doesn't get confused with normal data
-#define MYADDY 150
+#define MYADDY 65
 
 
 
@@ -16,7 +16,7 @@ static void process_command(void)
    */
 
 	// some example commands
-	if (strstr(command, "PING") != NULL) {
+	if (command == 'B') {
 		// Please note that as we're sending the address as a numerical,
 		// instead of a char, we get 2 less bytes. So if argv is full,
 		// the last two bytes are gonna get chopped off on the echo back
@@ -24,24 +24,10 @@ static void process_command(void)
 		//snprintf(output , 255 , "%d:PONG    :%s\n" , MYADDY , argv); // stdio.h was WAY too big
 		output[0] = MYADDY;
 		output[1] = ':';
-		output[2] = 'P';
-		output[3] = 'O';
-		output[4] = 'N';
-		output[5] = 'G';
-		output[6] = ' ';
-		output[7] = ' ';
-		output[8] = ' ';
-		output[9] = ' ';
-		output[10] = ':';
-		output[11] = '\0';
-
-#if defined (__AVR_ATmega328P__)
-		strlcat(output, argv, 243);
-#elif defined (__AVR_ATtiny2313__)
-		strlcat(output, argv, 20);
-#endif
-
-		strlcat(output, "\n", 20);
+		output[2] = 'B';
+		output[3] = ':';
+		output[4] = argv;
+		output[5] = '\n';
 
 		do_output = 1;
 	} 
@@ -49,11 +35,6 @@ static void process_command(void)
 	if (do_output) {
 		_delay_ms(100); // makes timing easier on PC RS485 adapter
 		rs485_send(output);
-#if defined (__AVR_ATmega328P__)
-  		memset(output, 0, 254); // clear output buffer for next run JIC
-#elif defined (__AVR_ATtiny2313__)
-  		memset(output, 0, 31); // clear output buffer for next run JIC
-#endif
 	}
 
 }
@@ -69,10 +50,9 @@ void local_setup(void)
 	sei();
 	_delay_ms(100);
   // END THESE MUST BE HERE
-  //
-		rs485_send("BLAH BLAH BLAH BLAH BLAH");
-
 }
+
+
 
 void local_main_loop(void)
 {
